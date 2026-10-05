@@ -1,0 +1,563 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>식단 룰렛</title>
+<style>
+  :root {
+    --bg: #fdf8f4;
+    --surface: #ffffff;
+    --text: #2d2522;
+    --muted: #8a7f79;
+    --border: #eadfd8;
+    --accent: #ff6b4a;
+    --accent-text: #ffffff;
+    --soft: #f1ebe7;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1b1817;
+      --surface: #262220;
+      --text: #f3ece8;
+      --muted: #a39892;
+      --border: #3a3431;
+      --accent: #ff7d5e;
+      --accent-text: #1b1817;
+      --soft: #322c29;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font-family: system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
+  }
+  main { max-width: 480px; margin: 0 auto; padding: 24px 16px 48px; }
+  header h1 { margin: 0; font-size: 1.5rem; }
+  header p { margin: 4px 0 0; color: var(--muted); }
+  section { margin-top: 20px; }
+  h2 { font-size: 1rem; margin: 0 0 10px; }
+  button { font: inherit; }
+  button:disabled { cursor: not-allowed; }
+  button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  /* 끼니 탭 */
+  .tabs {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px;
+    background: var(--soft); padding: 4px; border-radius: 12px;
+  }
+  .tab {
+    border: 0; background: transparent; padding: 10px 0; border-radius: 9px;
+    font-weight: 600; color: var(--muted); cursor: pointer;
+  }
+  .tab[aria-selected="true"] { background: var(--surface); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, .12); }
+  .tab .done { color: var(--accent); margin-left: 4px; }
+
+  /* 카테고리 필터 */
+  .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    border: 1px solid var(--border); background: var(--surface); color: var(--muted);
+    padding: 6px 12px; border-radius: 999px; font-size: .9rem; cursor: pointer;
+  }
+  .chip .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--c); opacity: .3; }
+  .chip[aria-pressed="true"] { color: var(--text); border-color: var(--c); }
+  .chip[aria-pressed="true"] .dot { opacity: 1; }
+
+  /* 룰렛 */
+  .wheel-wrap { position: relative; width: 100%; max-width: 340px; margin: 0 auto; aspect-ratio: 1; }
+  canvas { display: block; width: 100%; height: 100%; }
+  .pointer {
+    position: absolute; top: -6px; left: 50%; transform: translateX(-50%); z-index: 1;
+    border-left: 14px solid transparent; border-right: 14px solid transparent;
+    border-top: 24px solid var(--accent);
+    filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .25));
+  }
+  .spin {
+    position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+    width: 76px; height: 76px; border-radius: 50%;
+    border: 4px solid var(--surface); background: var(--accent); color: var(--accent-text);
+    font-weight: 800; cursor: pointer; box-shadow: 0 2px 8px rgba(0, 0, 0, .25);
+  }
+  .spin:disabled { background: var(--muted); }
+  .message { min-height: 1.5em; margin: 14px 0 0; text-align: center; color: var(--muted); }
+  .message.warn { color: var(--accent); }
+  .message.result { color: var(--text); font-weight: 700; font-size: 1.05rem; }
+
+  /* 오늘 식단 */
+  .slots { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+  .slot {
+    min-width: 0; padding: 12px 8px; border: 1px solid var(--border); border-radius: 12px;
+    background: var(--surface); color: var(--text); text-align: center; cursor: pointer;
+  }
+  .slot.active { border-color: var(--accent); }
+  .slot .label { display: block; font-size: .8rem; color: var(--muted); }
+  .slot .name { display: block; margin-top: 4px; font-weight: 700; overflow-wrap: anywhere; }
+  .slot .name.empty { color: var(--muted); font-weight: 400; font-size: .85rem; }
+  .slot.pop { animation: pop .4s ease-out; }
+  @keyframes pop { 50% { transform: scale(1.08); } }
+  .confirm {
+    width: 100%; margin-top: 12px; padding: 14px; border: 0; border-radius: 12px;
+    background: var(--accent); color: var(--accent-text); font-weight: 700; cursor: pointer;
+  }
+  .confirm:disabled { background: var(--soft); color: var(--muted); }
+
+  /* 히스토리 */
+  .history-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .history-head h2 { margin: 0; }
+  .link { border: 0; background: none; color: var(--muted); font-size: .85rem; text-decoration: underline; cursor: pointer; }
+  .history { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  .history li { padding: 10px 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surface); }
+  .history li.empty { padding: 0; border: 0; background: none; color: var(--muted); font-size: .9rem; }
+  .history .date { display: flex; align-items: center; gap: 6px; font-size: .85rem; color: var(--muted); }
+  .history .meals { margin-top: 4px; font-size: .95rem; }
+  .badge { padding: 2px 6px; border-radius: 999px; font-size: .72rem; background: var(--soft); color: var(--text); }
+  .badge.excluded { background: var(--accent); color: var(--accent-text); }
+
+  @media (prefers-reduced-motion: reduce) {
+    .slot.pop { animation: none; }
+  }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>오늘의 식단 룰렛</h1>
+    <p id="today"></p>
+  </header>
+
+  <section>
+    <div class="tabs" id="tabs" role="tablist" aria-label="끼니"></div>
+  </section>
+
+  <section>
+    <div class="chips" id="chips" role="group" aria-label="카테고리 필터"></div>
+  </section>
+
+  <section>
+    <div class="wheel-wrap">
+      <div class="pointer" aria-hidden="true"></div>
+      <canvas id="wheel" role="img" aria-label="메뉴 룰렛"></canvas>
+      <button type="button" class="spin" id="spin">SPIN</button>
+    </div>
+    <p class="message" id="message" aria-live="polite"></p>
+  </section>
+
+  <section>
+    <h2>오늘 식단</h2>
+    <div class="slots" id="slots"></div>
+    <button type="button" class="confirm" id="confirm">오늘 식단 확정</button>
+  </section>
+
+  <section>
+    <div class="history-head">
+      <h2>히스토리</h2>
+      <button type="button" class="link" id="reset">기록 초기화</button>
+    </div>
+    <ul class="history" id="history"></ul>
+  </section>
+</main>
+
+<script>
+  const CATEGORIES = ['한식', '중식', '일식', '양식', '분식'];
+  // 카테고리마다 두 가지 톤을 번갈아 써서 같은 카테고리 칸이 붙어도 구분되게 한다
+  const CAT_COLORS = {
+    한식: ['#ffb3a7', '#ffcbc2'],
+    중식: ['#ffd86b', '#ffe59a'],
+    일식: ['#9ed9c5', '#bde7d8'],
+    양식: ['#a9c7ff', '#c6daff'],
+    분식: ['#e2b6f2', '#edcdf7'],
+  };
+  const MEALS = { breakfast: '아침', lunch: '점심', dinner: '저녁' };
+  const MEAL_KEYS = Object.keys(MEALS);
+
+  const menu = (cat, names) => names.map(name => ({ name, cat }));
+  const MENUS = {
+    breakfast: [
+      ...menu('한식', ['누룽지', '전복죽', '계란국밥']),
+      ...menu('중식', ['만두', '샤오롱바오', '중국식 죽']),
+      ...menu('일식', ['오니기리', '낫토 정식', '계란말이 정식']),
+      ...menu('양식', ['토스트', '샌드위치', '팬케이크']),
+      ...menu('분식', ['김밥', '주먹밥', '유부초밥']),
+    ],
+    lunch: [
+      ...menu('한식', ['김치찌개', '된장찌개', '제육볶음', '비빔밥']),
+      ...menu('중식', ['짜장면', '짬뽕', '볶음밥']),
+      ...menu('일식', ['돈카츠', '라멘', '규동']),
+      ...menu('양식', ['파스타', '햄버거', '샐러드']),
+      ...menu('분식', ['떡볶이', '라볶이', '쫄면']),
+    ],
+    dinner: [
+      ...menu('한식', ['삼겹살', '닭볶음탕', '부대찌개', '치킨']),
+      ...menu('중식', ['마라탕', '탕수육', '깐풍기']),
+      ...menu('일식', ['초밥', '샤브샤브', '우동']),
+      ...menu('양식', ['스테이크', '피자', '리조또']),
+      ...menu('분식', ['순대볶음', '모둠튀김', '치즈떡볶이']),
+    ],
+  };
+
+  const EXCLUDE_DAYS = 3;
+  const HISTORY_KEY = 'mealRoulette.history';
+  const FILTERS_KEY = 'mealRoulette.filters';
+  const SPIN_MS = matchMedia('(prefers-reduced-motion: reduce)').matches ? 800 : 4000;
+  const TAU = Math.PI * 2;
+  const POINTER_ANGLE = -Math.PI / 2; // 12시 방향
+
+  // ---------- 저장소 ----------
+  function load(key, fallback) {
+    try {
+      const raw = localStorage.getItem(key);
+      return raw ? JSON.parse(raw) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+  function save(key, value) {
+    try {
+      localStorage.setItem(key, JSON.stringify(value));
+    } catch {
+      // 저장이 막힌 환경에서도 화면은 그대로 동작한다
+    }
+  }
+
+  // ---------- 날짜 ----------
+  const pad = n => String(n).padStart(2, '0');
+  const dateKey = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+  function daysAgo(n) {
+    const d = new Date();
+    d.setDate(d.getDate() - n);
+    return dateKey(d);
+  }
+  function formatDate(key) {
+    const [y, m, d] = key.split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'short' });
+  }
+  const TODAY = dateKey(new Date());
+  const excludedDates = () => new Set(Array.from({ length: EXCLUDE_DAYS }, (_, i) => daysAgo(i + 1)));
+
+  // ---------- 상태 ----------
+  let mealHistory = load(HISTORY_KEY, []);
+  if (!Array.isArray(mealHistory)) mealHistory = [];
+  let filters = load(FILTERS_KEY, CATEGORIES);
+  filters = Array.isArray(filters) ? filters.filter(c => CATEGORIES.includes(c)) : [...CATEGORIES];
+
+  const todayEntry = () => mealHistory.find(h => h.date === TODAY);
+  const confirmedToday = todayEntry();
+  const state = {
+    meal: 'breakfast',
+    // 오늘 이미 확정한 식단이 있으면 그걸로 시작한다
+    draft: Object.fromEntries(MEAL_KEYS.map(m => [m, confirmedToday?.[m] ?? null])),
+    items: [],
+    rotation: 0,
+    spinning: false,
+    message: null,
+    justPicked: null,
+  };
+
+  // ---------- 후보 계산 ----------
+  function recentMenus() {
+    const dates = excludedDates();
+    const names = new Set();
+    mealHistory.filter(h => dates.has(h.date)).forEach(h => MEAL_KEYS.forEach(m => h[m] && names.add(h[m])));
+    return names;
+  }
+
+  // 카테고리를 번갈아 배치해 원판에서 같은 색이 몰리지 않게 한다
+  function interleave(menus) {
+    const groups = CATEGORIES.map(c => menus.filter(m => m.cat === c));
+    const out = [];
+    for (let i = 0; out.length < menus.length; i++) groups.forEach(g => g[i] && out.push(g[i]));
+    return out;
+  }
+
+  function getCandidates(meal) {
+    const filtered = MENUS[meal].filter(m => filters.includes(m.cat));
+    if (!filtered.length) return { items: [], relaxed: false };
+    const recent = recentMenus();
+    const taken = new Set(MEAL_KEYS.filter(m => m !== meal).map(m => state.draft[m]).filter(Boolean));
+    const fresh = filtered.filter(m => !recent.has(m.name) && !taken.has(m.name));
+    return fresh.length
+      ? { items: interleave(fresh), relaxed: false }
+      : { items: interleave(filtered), relaxed: true };
+  }
+
+  // ---------- 원판 ----------
+  const canvas = document.getElementById('wheel');
+  const ctx = canvas.getContext('2d');
+  let size = 0;
+
+  function resizeCanvas() {
+    const dpr = window.devicePixelRatio || 1;
+    size = canvas.clientWidth;
+    canvas.width = Math.round(size * dpr);
+    canvas.height = Math.round(size * dpr);
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    drawWheel();
+  }
+
+  function drawWheel() {
+    if (!size) return;
+    const css = getComputedStyle(document.documentElement);
+    const items = state.items;
+    const c = size / 2;
+    const r = c - 6;
+    ctx.clearRect(0, 0, size, size);
+
+    if (!items.length) {
+      ctx.beginPath();
+      ctx.arc(c, c, r, 0, TAU);
+      ctx.fillStyle = css.getPropertyValue('--soft');
+      ctx.fill();
+      return;
+    }
+
+    const seg = TAU / items.length;
+    const shadeCount = {};
+    items.forEach((item, i) => {
+      shadeCount[item.cat] = (shadeCount[item.cat] ?? -1) + 1;
+      const start = state.rotation + i * seg;
+      ctx.beginPath();
+      ctx.moveTo(c, c);
+      ctx.arc(c, c, r, start, start + seg);
+      ctx.closePath();
+      ctx.fillStyle = CAT_COLORS[item.cat][shadeCount[item.cat] % 2];
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255, 255, 255, .9)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+    });
+
+    // 글자는 칸 가운데 방향으로 회전시켜 바깥쪽부터 쓴다. 가운데 SPIN 버튼 영역은 피한다.
+    const maxWidth = r - 14 - 46;
+    ctx.fillStyle = '#3a2f2a';
+    ctx.textAlign = 'right';
+    ctx.textBaseline = 'middle';
+    items.forEach((item, i) => {
+      let fontSize = Math.min(16, Math.max(11, 220 / items.length));
+      ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+      while (ctx.measureText(item.name).width > maxWidth && fontSize > 9) {
+        fontSize -= 1;
+        ctx.font = `600 ${fontSize}px system-ui, sans-serif`;
+      }
+      ctx.save();
+      ctx.translate(c, c);
+      ctx.rotate(state.rotation + (i + 0.5) * seg);
+      ctx.fillText(item.name, r - 14, 0);
+      ctx.restore();
+    });
+
+    ctx.beginPath();
+    ctx.arc(c, c, r, 0, TAU);
+    ctx.lineWidth = 4;
+    ctx.strokeStyle = css.getPropertyValue('--accent');
+    ctx.stroke();
+  }
+
+  const mod = (a, m) => ((a % m) + m) % m;
+  const easeOutCubic = t => 1 - (1 - t) ** 3;
+
+  function indexAtPointer() {
+    const seg = TAU / state.items.length;
+    return Math.floor(mod(POINTER_ANGLE - state.rotation, TAU) / seg) % state.items.length;
+  }
+
+  function spin() {
+    if (state.spinning || !state.items.length) return;
+    const n = state.items.length;
+    const seg = TAU / n;
+    // 당첨 칸을 먼저 정하고, 그 칸 중앙 근처가 포인터에 오도록 목표 각도를 역산한다
+    const target = Math.floor(Math.random() * n);
+    const jitter = (Math.random() - 0.5) * seg * 0.7;
+    const aligned = POINTER_ANGLE - (target + 0.5) * seg - jitter;
+    const start = state.rotation;
+    const end = start + 5 * TAU + mod(aligned - start, TAU);
+
+    state.spinning = true;
+    state.message = null;
+    render();
+
+    const t0 = performance.now();
+    function frame(now) {
+      const t = Math.min(1, (now - t0) / SPIN_MS);
+      state.rotation = start + (end - start) * easeOutCubic(t);
+      drawWheel();
+      if (t < 1) {
+        requestAnimationFrame(frame);
+        return;
+      }
+      state.rotation = mod(end, TAU);
+      finishSpin();
+    }
+    requestAnimationFrame(frame);
+  }
+
+  function finishSpin() {
+    const picked = state.items[indexAtPointer()];
+    state.draft[state.meal] = picked.name;
+    state.spinning = false;
+    state.justPicked = state.meal;
+    const next = MEAL_KEYS.find(m => !state.draft[m]);
+    state.message = {
+      type: 'result',
+      text: `${MEALS[state.meal]}은 ${picked.name}!` + (next ? ` 이제 ${MEALS[next]} 차례예요.` : ' 마음에 들면 확정해 주세요.'),
+    };
+    render();
+  }
+
+  // ---------- 동작 ----------
+  function selectMeal(meal) {
+    if (state.spinning || meal === state.meal) return;
+    state.meal = meal;
+    state.message = null;
+    render();
+  }
+
+  function toggleFilter(cat) {
+    if (state.spinning) return;
+    filters = filters.includes(cat) ? filters.filter(c => c !== cat) : CATEGORIES.filter(c => c === cat || filters.includes(c));
+    save(FILTERS_KEY, filters);
+    state.message = null;
+    render();
+  }
+
+  function confirmToday() {
+    const entry = { date: TODAY, ...state.draft };
+    mealHistory = [entry, ...mealHistory.filter(h => h.date !== TODAY)].sort((a, b) => b.date.localeCompare(a.date));
+    save(HISTORY_KEY, mealHistory);
+    state.message = { type: 'result', text: '오늘 식단을 확정했어요. 맛있게 드세요!' };
+    render();
+  }
+
+  function resetHistory() {
+    if (!confirm('히스토리를 모두 지울까요?')) return;
+    mealHistory = [];
+    save(HISTORY_KEY, mealHistory);
+    state.message = null;
+    render();
+  }
+
+  // ---------- 렌더링 ----------
+  const el = id => document.getElementById(id);
+  const tabsEl = el('tabs');
+  const chipsEl = el('chips');
+  const spinBtn = el('spin');
+  const messageEl = el('message');
+  const slotsEl = el('slots');
+  const confirmBtn = el('confirm');
+  const resetBtn = el('reset');
+  const historyEl = el('history');
+
+  function button(className, onClick) {
+    const b = document.createElement('button');
+    b.className = className;
+    b.disabled = state.spinning;
+    b.addEventListener('click', onClick);
+    return b;
+  }
+
+  function span(className, text) {
+    const s = document.createElement('span');
+    s.className = className;
+    s.textContent = text;
+    return s;
+  }
+
+  function render() {
+    const { items, relaxed } = getCandidates(state.meal);
+    if (!state.spinning) state.items = items;
+    const label = MEALS[state.meal];
+
+    tabsEl.replaceChildren(...MEAL_KEYS.map(m => {
+      const b = button('tab', () => selectMeal(m));
+      b.setAttribute('role', 'tab');
+      b.setAttribute('aria-selected', m === state.meal);
+      b.append(MEALS[m]);
+      if (state.draft[m]) b.append(span('done', '✓'));
+      return b;
+    }));
+
+    chipsEl.replaceChildren(...CATEGORIES.map(cat => {
+      const b = button('chip', () => toggleFilter(cat));
+      b.style.setProperty('--c', CAT_COLORS[cat][0]);
+      b.setAttribute('aria-pressed', filters.includes(cat));
+      b.append(span('dot', ''), cat);
+      return b;
+    }));
+
+    spinBtn.disabled = state.spinning || !state.items.length;
+    drawWheel();
+
+    let msg;
+    if (state.spinning) msg = { type: '', text: '두구두구두구...' };
+    else if (!state.items.length) msg = { type: 'warn', text: `선택한 카테고리에 맞는 ${label} 메뉴가 없어요. 필터를 바꿔 보세요.` };
+    else if (state.message) msg = state.message;
+    else if (relaxed) msg = { type: 'warn', text: '남은 후보가 없어서 최근 메뉴 제외를 잠시 풀었어요.' };
+    else if (state.draft[state.meal]) msg = { type: '', text: `${label}은 ${state.draft[state.meal]}. 다시 돌려도 돼요.` };
+    else msg = { type: '', text: `가운데 SPIN을 눌러 ${label} 메뉴를 뽑아 보세요.` };
+    messageEl.className = `message ${msg.type}`;
+    messageEl.textContent = msg.text;
+
+    slotsEl.replaceChildren(...MEAL_KEYS.map(m => {
+      const b = button('slot', () => selectMeal(m));
+      if (m === state.meal) b.classList.add('active');
+      if (m === state.justPicked) b.classList.add('pop');
+      b.append(
+        span('label', MEALS[m]),
+        state.draft[m] ? span('name', state.draft[m]) : span('name empty', '아직 안 뽑았어요'),
+      );
+      return b;
+    }));
+    state.justPicked = null;
+
+    const filled = MEAL_KEYS.every(m => state.draft[m]);
+    const entry = todayEntry();
+    const confirmed = entry && MEAL_KEYS.every(m => entry[m] === state.draft[m]);
+    confirmBtn.disabled = state.spinning || !filled || confirmed;
+    confirmBtn.textContent = confirmed ? '오늘 식단 확정됨 ✓'
+      : !filled ? '세 끼를 모두 뽑으면 확정할 수 있어요'
+      : entry ? '바뀐 식단으로 다시 확정'
+      : '오늘 식단 확정';
+
+    resetBtn.disabled = state.spinning || !mealHistory.length;
+    renderHistory();
+  }
+
+  function renderHistory() {
+    if (!mealHistory.length) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = '아직 확정한 식단이 없어요.';
+      historyEl.replaceChildren(li);
+      return;
+    }
+    const dates = excludedDates();
+    historyEl.replaceChildren(...mealHistory.slice(0, 30).map(h => {
+      const li = document.createElement('li');
+      const date = document.createElement('div');
+      date.className = 'date';
+      date.append(formatDate(h.date));
+      if (h.date === TODAY) date.append(span('badge', '오늘'));
+      else if (dates.has(h.date)) date.append(span('badge excluded', '제외 중'));
+      const meals = document.createElement('div');
+      meals.className = 'meals';
+      meals.textContent = MEAL_KEYS.map(m => `${MEALS[m]} ${h[m] ?? '-'}`).join(' · ');
+      li.append(date, meals);
+      return li;
+    }));
+  }
+
+  // ---------- 시작 ----------
+  el('today').textContent = new Date().toLocaleDateString('ko-KR', { year: 'numeric', month: 'long', day: 'numeric', weekday: 'long' });
+  spinBtn.addEventListener('click', spin);
+  confirmBtn.addEventListener('click', confirmToday);
+  resetBtn.addEventListener('click', resetHistory);
+  window.addEventListener('resize', resizeCanvas);
+  matchMedia('(prefers-color-scheme: dark)').addEventListener('change', drawWheel);
+  render();
+  resizeCanvas();
+</script>
+</body>
+</html>

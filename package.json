@@ -1,0 +1,21 @@
+{
+  "name": "meal-roulette",
+  "version": "1.0.0",
+  "private": true,
+  "description": "오늘의 식단 룰렛 (단일 HTML 앱)",
+  "type": "module",
+  "scripts": {
+    "lint": "eslint .",
+    "build": "html-validate index.html",
+    "test": "node --test",
+    "check": "npm run lint && npm run build && npm test"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.12.0",
+    "eslint-plugin-html": "^8.2.1",
+    "globals": "^17.13.0",
+    "html-validate": "^11.16.2",
+    "jsdom": "^30.1.2"
+  }
+}
